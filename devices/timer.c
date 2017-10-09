@@ -33,11 +33,6 @@ static void real_time_delay (int64_t num, int32_t denom);
 
 static void action_blocked_threads (struct thread *t, void *aux);
 
-
-//struct semaphore sema;
-
-//static void action_blocked_threads (thread *t, void *aux);
-
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -101,24 +96,13 @@ timer_sleep (int64_t ticks)
   struct thread *t  = running_thread ();
   t->tblocked       = start;
   t->bduration      = ticks;
-  
-  /* Set up semaphore */
-  //func need interrupt off, so aquire semaphore
-  //sema_down (sema);
-  
 
-  /*THIS IS THE WRONG WAY; SOLVE WITH SEMAPHORES*/
+  //disable interrupts
   enum intr_level old;
   old = intr_disable();
   thread_block ();
   intr_set_level (old);
-
-  //sema_up (sema); //release sema
-  printf("Released");
-
-  //ASSERT (intr_get_level () == INTR_ON);
-  //while (timer_elapsed (start) < ticks) 
-  //  thread_yield ();
+  //enable interrupts
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -211,7 +195,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 }
 
 static void 
-action_blocked_threads (struct thread *t, void *aux)
+action_blocked_threads (struct thread *t, void *aux UNUSED)
 {
   //Check that it is a blocked thread, and that it was blocked by timer_sleep
   if(t->status == THREAD_BLOCKED && t->tblocked != NULL) 
