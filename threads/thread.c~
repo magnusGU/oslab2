@@ -604,13 +604,5 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 
 
-void 
-time_blocked (int start)
-{
-  struct thread t = running_thread ();
-  t->tblocked = start;
-}
-
-
 
 

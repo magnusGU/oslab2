@@ -45,14 +45,6 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-
-
-  //sema_init (&sema, 1);
-  //initalizing semaphore, assigning 0 before func call so the sema isn't zero  
-  //printf("cmon now");  
-  //sema->value = 0;
-  //printf("init sema");
-  //sema_init (sema,1);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -105,8 +97,10 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
-  time_blocked (start);
+  int64_t start     = timer_ticks ();
+  struct thread *t  = running_thread ();
+  t->tblocked       = start;
+  t->bduration      = ticks;
   
   /* Set up semaphore */
   //func need interrupt off, so aquire semaphore
@@ -219,11 +213,10 @@ timer_interrupt (struct intr_frame *args UNUSED)
 static void 
 action_blocked_threads (struct thread *t, void *aux)
 {
-  if(t->status == THREAD_BLOCKED)
+  //Check that it is a blocked thread, and that it was blocked by timer_sleep
+  if(t->status == THREAD_BLOCKED && t->tblocked != NULL) 
   {
-    ASSERT(t->status == THREAD_BLOCKED); 
-
-    if(timer_elapsed (t->tblocked) >= 10/*(unknown variable that holds how many ticks blocked thread should block)*/ )
+    if(timer_elapsed (t->tblocked) >= t->bduration )
     {
       thread_unblock (t);
     }
