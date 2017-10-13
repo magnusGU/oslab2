@@ -39,7 +39,7 @@ void oneTask(task_t task);/*Task requires to use the bus and executes methods be
 
 struct semaphore send, receive;
 struct condition wait;
-struct lock condition_lock, norm_lock;
+struct lock condition_lock, send_lock, receive_lock;
 int send_priority_num, receive_priority_num;
 bool senderprio, recprio;
 
@@ -52,7 +52,8 @@ void init_bus(void){
     sema_init(&receive, BUS_CAPACITY);
     cond_init(&wait);
     lock_init(&condition_lock);
-    lock_init(&norm_lock);
+    lock_init(&send_lock);
+    lock_init(&receive_lock);
 }
 
 /*
@@ -135,68 +136,105 @@ void oneTask(task_t task) {
 /* task tries to get slot on the bus subsystem */
 void getSlot(task_t task) 
 {
+    
+    lock_acquire(&condition_lock);
+    //msg("I'm %d %d \n",task.direction, task.priority);
     /*send all senders with high priority
     if any regular senders can be sent before last hihgh priority can be sent, send that
     this can be done with a try acquire, if you can't acquire, that means you are free to go
     once last high priority sender leave block all other senders by releasing
     */
-    if(task.direction == SENDER && task.priority == HIGH)
-    {
-        senderprio = true;
-        send_priority_num++;
-        while(receive.value != BUS_CAPACITY)
-        {
-            lock_acquire(&condition_lock);
-            cond_wait(&wait, &condition_lock);
-            lock_release(&condition_lock);
-        }
-        sema_down(&send); 
-        send_priority_num--;
-    }
-    else if(task.direction == RECEIVER && task.priority == HIGH)
-    {        
-        recprio = true;
-        receive_priority_num++;
-        while(senderprio == true || send.value != BUS_CAPACITY)
-        {
-            
-            lock_acquire(&condition_lock);
-            cond_wait(&wait, &condition_lock);
-            lock_release(&condition_lock);
-        }
-        sema_down(&receive);
-        receive_priority_num--;
-    }
-    else if(task.direction == SENDER)
-    {
-        //
-        lock_acquire(&norm_lock); 
-  
-        while(recprio == true || send_priority_num > 0 || receive.value != BUS_CAPACITY)
-        {
-            lock_acquire(&condition_lock);
-            cond_wait(&wait, &condition_lock);
-            lock_release(&condition_lock);
-        }
-        sema_down(&send);
+    if(task.direction == SENDER)
+    {    
+        lock_acquire(&send_lock);
 
-        lock_release(&norm_lock);
+        if(task.priority == HIGH)
+        {
+            senderprio = true;
+            send_priority_num++;       
+            while(receive.value != BUS_CAPACITY)
+            {
+                lock_release(&send_lock);
+                cond_wait(&wait, &condition_lock);
+                lock_acquire(&send_lock);
+            }
+            
+            if(!sema_try_down(&send))
+            {
+                madness_locks(&receive_lock, &send_lock, &condition_lock, &send);
+            }
+                
+            send_priority_num--;
+        }
+        else
+        { 
+            while(recprio == true || send_priority_num > 0 || receive.value != BUS_CAPACITY)
+            {
+                lock_release(&send_lock);
+                cond_wait(&wait, &condition_lock);
+                lock_acquire(&send_lock);
+            }        
+            
+            if(!sema_try_down(&send))
+            {
+                madness_locks(&receive_lock, &send_lock, &condition_lock, &send);
+            }
+        }
+        lock_release(&send_lock);
     }
     else
     {
-        lock_acquire(&norm_lock); 
-  
-        while(senderprio == true || receive_priority_num > 0 || send.value != BUS_CAPACITY)
-        {
-            lock_acquire(&condition_lock);
-            cond_wait(&wait, &condition_lock);
-            lock_release(&condition_lock);
-        }
-        sema_down(&receive);
+        //msg("Trying to acquire receive_lock");
+        lock_acquire(&receive_lock);
 
-        lock_release(&norm_lock);
+        //msg("Acquired receive_lock");
+        if(task.priority == HIGH)
+        {        
+            recprio = true;
+            receive_priority_num++;
+            while(senderprio == true || send.value != BUS_CAPACITY)
+            {
+                lock_release(&receive_lock);
+                cond_wait(&wait, &condition_lock);
+                lock_acquire(&receive_lock);
+            }
+            msg("GOT HERE");
+            if(!sema_try_down(&receive))
+            {
+                madness_locks(&send_lock, &receive_lock, &condition_lock, &receive);
+            }
+            receive_priority_num--;
+        }
+        else
+        {
+            while(senderprio == true || receive_priority_num > 0 || send.value != BUS_CAPACITY)
+            {
+                lock_release(&receive_lock);
+                cond_wait(&wait, &condition_lock);
+                lock_acquire(&receive_lock);
+            }
+
+            if(!sema_try_down(&receive))
+            {
+                madness_locks(&send_lock, &receive_lock, &condition_lock, &receive);
+            }
+        }
+        lock_release(&receive_lock);
     }
+    lock_release(&condition_lock);
 }
+
+void madness_locks(struct lock *lock1, struct lock *lock2, struct lock *cond_lock, struct semaphore *sema)
+{
+    lock_acquire(lock1);
+    lock_release(lock2);                
+    lock_release(cond_lock);
+    sema_down(sema);
+    lock_acquire(cond_lock);
+    lock_acquire(lock2);
+    lock_release(lock1);
+}
+
 
 /* task processes data on the bus send/receive */
 void transferData(task_t task) 
@@ -207,6 +245,9 @@ void transferData(task_t task)
 /* task releases the slot */
 void leaveSlot(task_t task) 
 {   
+    msg("outside");
+    lock_acquire(&condition_lock);
+    msg("I got in");
     if(task.direction == SENDER)
     {
         sema_up(&send);
@@ -221,15 +262,13 @@ void leaveSlot(task_t task)
                 recprio = false;
         }
     }
-
     if(send.value == BUS_CAPACITY && receive.value == BUS_CAPACITY)
     {
-        //msg("broadcast");
-        lock_acquire(&condition_lock);    
+        msg("broadcast");    
         cond_broadcast(&wait,&condition_lock);
-        if(lock_held_by_current_thread(&condition_lock))
-            lock_release(&condition_lock);
     }
+    if(lock_held_by_current_thread(&condition_lock))
+        lock_release(&condition_lock);
 }
 
 

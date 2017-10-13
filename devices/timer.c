@@ -92,16 +92,14 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start     = timer_ticks ();
   struct thread *t  = running_thread ();
-  t->tblocked       = start;
+  t->tblocked       = timer_ticks();
   t->bduration      = ticks;
 
   //disable interrupts
-  enum intr_level old = intr_disable();
+  enum intr_level old_level = intr_disable();
   thread_block ();
-  //intr_set_level (old);
-  //enable interrupts
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -184,12 +182,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;  
   thread_tick ();
-  //thread_foreach function has to run with interrupts off, turn off interrupt for least amount of code possible
-  //enum intr_level old_level = intr_disable ();
-  thread_foreach (action_blocked_threads, NULL);
-  //intr_set_level (old_level);
 
-  //interrupts enabled again
+  thread_foreach (action_blocked_threads, NULL);
 }
 
 static void 
