@@ -98,10 +98,9 @@ timer_sleep (int64_t ticks)
   t->bduration      = ticks;
 
   //disable interrupts
-  enum intr_level old;
-  old = intr_disable();
+  enum intr_level old = intr_disable();
   thread_block ();
-  intr_set_level (old);
+  //intr_set_level (old);
   //enable interrupts
 }
 
@@ -186,10 +185,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;  
   thread_tick ();
   //thread_foreach function has to run with interrupts off, turn off interrupt for least amount of code possible
-  
-  enum intr_level old_level = intr_disable ();
+  //enum intr_level old_level = intr_disable ();
   thread_foreach (action_blocked_threads, NULL);
-  intr_set_level (old_level);
+  //intr_set_level (old_level);
 
   //interrupts enabled again
 }
@@ -202,6 +200,7 @@ action_blocked_threads (struct thread *t, void *aux UNUSED)
   {
     if(timer_elapsed (t->tblocked) >= t->bduration )
     {
+      t->tblocked = NULL;
       thread_unblock (t);
     }
   }

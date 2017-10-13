@@ -53,6 +53,7 @@ void init_bus(void){
     cond_init(&wait);
     lock_init(&condition_lock);
     lock_init(&norm_lock);
+
 }
 
 /*
