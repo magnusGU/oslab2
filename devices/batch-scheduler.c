@@ -146,9 +146,12 @@ void getSlot(task_t task)
             while(receive.value != BUS_CAPACITY)
                 cond_wait(&sendwait, &condition_lock);
             
+            //waits in the condition list so the condition lock is free for tasks leaving the bus
             while(!sema_try_down(&send))
                 cond_wait(&sendwait, &condition_lock);
-                
+
+            //decreases this already here to allow normal sender tasks to also access the bus
+            //the senderprio bool on the other hand won't be flipped until all prio tasks leave the bus.
             send_priority_num--;
         }
         else
@@ -223,7 +226,7 @@ void leaveSlot(task_t task)
             cond_broadcast(&receivewait,&condition_lock);
     }
 
-    //if you still hold on to the lock, it's time to let go
+    //if you still hold on to the lock, which is possible if no other tasks has come in yet, release it here
     if(lock_held_by_current_thread(&condition_lock))
         lock_release(&condition_lock);
 }

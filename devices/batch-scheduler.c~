@@ -39,7 +39,7 @@ void oneTask(task_t task);/*Task requires to use the bus and executes methods be
 
 struct semaphore send, receive;
 struct condition sendwait, receivewait;
-struct lock condition_lock, send_lock, receive_lock;
+struct lock condition_lock;
 int send_priority_num, receive_priority_num;
 bool senderprio, recprio;
 
@@ -53,8 +53,6 @@ void init_bus(void){
     cond_init(&sendwait);
     cond_init(&receivewait);
     lock_init(&condition_lock);
-    lock_init(&send_lock);
-    lock_init(&receive_lock);
 }
 
 /*
@@ -127,9 +125,7 @@ void receiverPriorityTask(void *aux UNUSED){
 /* abstract task execution*/
 void oneTask(task_t task) {
   getSlot(task);
-  msg("Transfering DATA DIR:%d PRI:%d \n", task.direction, task.priority);
   transferData(task);
-  msg("DATA transferred\n");
   leaveSlot(task);
 }
 
@@ -146,29 +142,25 @@ void getSlot(task_t task)
         {
             senderprio = true;
             send_priority_num++;       
+
             while(receive.value != BUS_CAPACITY)
-            {
                 cond_wait(&sendwait, &condition_lock);
-            }
             
+            //waits in the condition list so the condition lock is free for tasks leaving the bus
             while(!sema_try_down(&send))
-            {
                 cond_wait(&sendwait, &condition_lock);
-            }
-                
+
+            //decreases this already here to allow normal sender tasks to also access the bus
+            //the senderprio bool on the other hand won't be flipped until all prio tasks leave the bus.
             send_priority_num--;
         }
         else
         { 
             while(recprio == true || send_priority_num > 0 || receive.value != BUS_CAPACITY)
-            {
                 cond_wait(&sendwait, &condition_lock);
-            }        
             
             while(!sema_try_down(&send))
-            {
                 cond_wait(&sendwait, &condition_lock);
-            }
         }
     }
     else
@@ -177,28 +169,22 @@ void getSlot(task_t task)
         {        
             recprio = true;
             receive_priority_num++;
+
             while(senderprio == true || send.value != BUS_CAPACITY)
-            {
                 cond_wait(&receivewait, &condition_lock);
-            }
 
             while(!sema_try_down(&receive))
-            {
                 cond_wait(&receivewait, &condition_lock);
-            }
+
             receive_priority_num--;
         }
         else
         {
             while(senderprio == true || receive_priority_num > 0 || send.value != BUS_CAPACITY)
-            {
                 cond_wait(&receivewait, &condition_lock);
-            }
 
             while(!sema_try_down(&receive))
-            {
                 cond_wait(&receivewait, &condition_lock);
-            }
         }
     }
     lock_release(&condition_lock);
@@ -239,10 +225,10 @@ void leaveSlot(task_t task)
         if(lock_held_by_current_thread(&condition_lock))
             cond_broadcast(&receivewait,&condition_lock);
     }
+
     //if you still hold on to the lock, it's time to let go
     if(lock_held_by_current_thread(&condition_lock))
         lock_release(&condition_lock);
-
 }
 
 
